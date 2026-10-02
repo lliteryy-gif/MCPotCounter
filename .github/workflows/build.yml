@@ -1,25 +1,75 @@
 name: Build Potion Counter
-on: [push, pull_request, workflow_dispatch]
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
 permissions:
-  contents: read
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Download source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.2.1'
-      - name: Build remapped Fabric mod
+
+      - name: Build mod
         run: gradle build --no-daemon --stacktrace
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload mod
+        uses: actions/upload-artifact@v4
         with:
           name: Potion-Counter-Fabric-1.21.11
           path: |
             build/libs/*.jar
             !build/libs/*-sources.jar
           if-no-files-found: error
+
+      - name: Prepare release description
+        run: |
+          cat > release-notes.md <<'EOF'
+          Клиентский мод для Minecraft 1.21.11 / Fabric.
+
+          Показывает количество брошенных взрывных зелий «Исцеление II» рядом с ником игрока.
+
+          Команды:
+          - /potcounter reset Ник — сбросить счётчик игрока.
+          - /potcounter resetall — сбросить всех.
+          - /potcounter side left — показывать слева от ника.
+          - /potcounter side right — показывать справа.
+          - /potcounter count Ник — посмотреть число в чате.
+          - /potcounter hide — скрыть подписи.
+          - /potcounter show — показать подписи.
+
+          Установка: положите JAR в папку mods вместе с Fabric API для 1.21.11.
+          Требуются Fabric Loader от 0.18.4 и Java 21.
+
+          Учитываются только броски, которые сервер передаёт клиенту.
+          При переподключении счётчики обнуляются.
+          Сборка проверена автоматически; ручной тест в игре ещё не выполнен.
+          EOF
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" \
+            build/libs/potion-counter-1.21.11-1.0.0.jar \
+            --target "$GITHUB_SHA" \
+            --title "Potion Counter — Fabric 1.21.11 · сборка ${GITHUB_RUN_NUMBER}" \
+            --notes-file release-notes.md
